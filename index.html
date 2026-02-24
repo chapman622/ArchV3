@@ -186,10 +186,11 @@
       <div style="font-size:9px;color:var(--accent);margin-bottom:4px">OFFSET TUNERS — adjust until green boxes align with quantity numbers</div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:9px;color:var(--muted);margin-bottom:4px">
         offX:<input class="tin" id="t-ox" type="number" value="18">
-        offY (top scan):<input class="tin" id="t-oy" type="number" value="78">
-        offY (bottom scan):<input class="tin" id="t-oy2" type="number" value="78">
+        offY (top scan):<input class="tin" id="t-oy" type="number" value="68">
+        offY (bottom scan):<input class="tin" id="t-oy2" type="number" value="68">
         step (horiz):<input class="tin" id="t-step" type="number" value="49">
         row (vert):<input class="tin" id="t-row" type="number" value="70">
+        icon px:<input class="tin" id="t-icon" type="number" value="42">
       </div>
       <div style="display:flex;gap:5px;flex-wrap:wrap">
         <button class="btn suc" id="t-rescan" style="font-size:9px;padding:2px 5px">&#9654; Re-Scan Top</button>
@@ -320,27 +321,28 @@ let storedWinHeight=parseInt(localStorage.getItem("archStorageWinHeight"))||342;
 // offsetY2 = px from window top to first number row (bottom scan = scrolled so Dragonkin is first row)
 // rowStep  = px between each row of culture icons (~68px for default RS3 UI scale)
 // horizStep= px between icon columns (~49px)
-let offsetX=18, offsetY=78, offsetY2=78, horizStep=49, rowStep=70;
+let offsetX=18, offsetY=68, offsetY2=68, horizStep=49, rowStep=70, iconSize=42;
 
 function loadTuners(){
   const s=JSON.parse(localStorage.getItem("archOcrTuners")||"{}");
-  offsetX=s.offsetX??18; offsetY=s.offsetY??78; offsetY2=s.offsetY2??78;
-  horizStep=s.horizStep??49; rowStep=s.rowStep??70;
+  offsetX=s.offsetX??18; offsetY=s.offsetY??68; offsetY2=s.offsetY2??68;
+  horizStep=s.horizStep??49; rowStep=s.rowStep??70; iconSize=s.iconSize??42;
   document.getElementById("t-ox").value=offsetX;
   document.getElementById("t-oy").value=offsetY;
   document.getElementById("t-oy2").value=offsetY2;
   document.getElementById("t-step").value=horizStep;
   document.getElementById("t-row").value=rowStep;
+  document.getElementById("t-icon").value=iconSize;
 }
 function saveTuners(){
-  localStorage.setItem("archOcrTuners",JSON.stringify({offsetX,offsetY,offsetY2,horizStep,rowStep}));
+  localStorage.setItem("archOcrTuners",JSON.stringify({offsetX,offsetY,offsetY2,horizStep,rowStep,iconSize}));
 }
 // Wipe old tuner saves that used wrong defaults (v3 values)
 (function(){
   const s=JSON.parse(localStorage.getItem("archOcrTuners")||"{}");
-  if(s.rowStep&&(s.rowStep<65||s.offsetY<50)){localStorage.removeItem("archOcrTuners");}
+  if(s.rowStep&&(s.rowStep<65||s.offsetY<65)){localStorage.removeItem("archOcrTuners");}
 })();
-["t-ox","t-oy","t-oy2","t-step","t-row"].forEach(function(id){
+["t-ox","t-oy","t-oy2","t-step","t-row","t-icon"].forEach(function(id){
   document.getElementById(id).addEventListener("input",function(e){
     const v=parseInt(e.target.value)||0;
     if(id==="t-ox")offsetX=v;
@@ -348,6 +350,7 @@ function saveTuners(){
     if(id==="t-oy2")offsetY2=v;
     if(id==="t-step")horizStep=v;
     if(id==="t-row")rowStep=v;
+    if(id==="t-icon")iconSize=v;
     saveTuners();
   });
 });
@@ -358,27 +361,38 @@ document.getElementById("t-rescan-bot").addEventListener("click",scanBottom);
 function previewBoxes(startIdx,endIdx,useOffsetY){
   if(!storedWinX||!storedWinY){document.getElementById("ocr-out").textContent="Locate window first.";return;}
   const absX=storedWinX,absY=storedWinY;
+  // Yellow outline = whole window
   alt1.overLayRect(A1lib.mixColor(255,200,0),absX,absY,storedWinWidth,storedWinHeight,6000,2);
   const rowDefs=[{slots:10},{slots:5},{slots:5},{slots:5},{slots:5},{slots:5},{slots:5}];
+  const iconSize=42; // RS3 material icon is ~42x42px
   let storageIdx=0;
   for(let rowIdx=0;rowIdx<rowDefs.length;rowIdx++){
     const row=rowDefs[rowIdx];
+    // Icon top = number Y - iconSize (numbers sit just below the icon)
     const numY=absY+useOffsetY+(rowIdx*rowStep);
-    for(let slot=0;slot<row.slots;slot++){
-      const idx=storageIdx+slot;
-      if(idx>=startIdx&&idx<=endIdx){
-        const mat=STORAGE_ORDER[idx];
-        if(mat){
-          const numX=absX+offsetX+(slot*horizStep);
-          // Blue = preview only
-          alt1.overLayRect(A1lib.mixColor(80,180,255),numX-1,numY-2,50,16,6000,1);
+    const iconTop=numY-iconSize;
+    const rowStart=storageIdx;
+    const rowEnd=storageIdx+row.slots-1;
+    const rowOverlaps=(rowEnd>=startIdx&&rowStart<=endIdx);
+    if(rowOverlaps){
+      for(let slot=0;slot<row.slots;slot++){
+        const idx=storageIdx+slot;
+        if(idx>=startIdx&&idx<=endIdx){
+          const mat=STORAGE_ORDER[idx];
+          if(mat){
+            const iconX=absX+offsetX+(slot*horizStep);
+            // Blue box around the icon
+            alt1.overLayRect(A1lib.mixColor(80,180,255),iconX,iconTop,iconSize,iconSize,6000,1);
+            // Green dot/line right where the number should be
+            alt1.overLayRect(A1lib.mixColor(0,255,0),iconX,numY-2,iconSize,10,6000,1);
+          }
         }
       }
     }
     storageIdx+=row.slots;
   }
   alt1.overLayRefreshGroup("0");
-  document.getElementById("ocr-out").textContent="Preview boxes drawn (blue). Adjust offsets until they cover the numbers, then Re-Scan.";
+  document.getElementById("ocr-out").textContent="Preview: blue=icon area, green=number read zone. Tune offsets until green lines sit on the numbers.";
 }
 document.getElementById("t-preview-top").addEventListener("click",function(){previewBoxes(0,19,offsetY);});
 document.getElementById("t-preview-bot").addEventListener("click",function(){previewBoxes(20,39,offsetY2);});
@@ -457,7 +471,13 @@ async function performScan(startIdx,endIdx,label,useOffsetY){
     const numY=absY+useOffsetY+(rowIdx*rowStep);
     const rowW=row.slots*horizStep;
 
-    alt1.overLayRect(A1lib.mixColor(255,255,0),absX+offsetX,numY-4,rowW,18,4000,1);
+    // Check if any slot in this row falls within our scan range before drawing
+    const rowStart=storageIdx;
+    const rowEnd=storageIdx+row.slots-1;
+    const rowOverlaps=(rowEnd>=startIdx&&rowStart<=endIdx);
+    if(rowOverlaps){
+      alt1.overLayRect(A1lib.mixColor(255,255,0),absX+offsetX,numY-4,rowW,18,4000,1);
+    }
 
     for(let slot=0;slot<row.slots;slot++){
       const idx=storageIdx+slot;
